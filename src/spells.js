@@ -78,7 +78,7 @@ export class SpellSystem {
   }
 
   castOrigin(p) {
-    const dir = p.lookDir();
+    const dir = p.aimDir();
     const right = new THREE.Vector3(-dir.z, 0, dir.x).normalize();
     return p.eyePos().addScaledVector(dir, 0.5).addScaledVector(right, 0.16).add(new THREE.Vector3(0, -0.14, 0));
   }
@@ -108,7 +108,7 @@ export class SpellSystem {
       return;
     }
 
-    const dir = p.lookDir();
+    const dir = p.aimDir(); // punched view — bolts go where the crosshair points
     const spread = this.spreadFor(p, spell);
     if (spread > 0) {
       const right = new THREE.Vector3(-dir.z, 0, dir.x).normalize();
@@ -136,7 +136,8 @@ export class SpellSystem {
     });
 
     // recoil: spread blooms for everyone; the human's camera kicks with a
-    // CS 1.6-style punch that decays — the view recovers, true aim stays put
+    // CS 1.6-style punch that decays — and bolts follow the punched view
+    // (aimDir), so the spray climbs exactly like the crosshair does
     if (spell.bloom) p.bloom = Math.min(3.4, p.bloom + spell.bloom);
     if (spell.recoil && p.isHuman) {
       p.punchPitch = Math.min(0.22, p.punchPitch + spell.recoil * (0.8 + Math.random() * 0.4));
@@ -165,7 +166,8 @@ export class SpellSystem {
       this.stopShield(p);
     }
     if (p.shielding) {
-      p.mana -= spell.drain * p.wand.manaMult * (p.disc?.drainMult ?? 1) * dt;
+      const greaterGood = p.char.id === 'dumbledore' ? 0.6 : 1; // his shield barely sips
+      p.mana -= spell.drain * p.wand.manaMult * (p.disc?.drainMult ?? 1) * greaterGood * dt;
       if (p.mana <= 0) {
         p.mana = 0;
         this.stopShield(p, true);
@@ -285,8 +287,9 @@ export class SpellSystem {
       // players & shields
       for (const v of game.players) {
         if (!v.alive) continue;
-        // shields block everything except the caster's own bolts
-        if (v.shielding && v !== pr.owner) {
+        // shields only stop ENEMY bolts — friendly fire passes through, same
+        // as bodies, so a teammate's Protego no longer eats your cast
+        if (v.shielding && v.team !== pr.owner.team) {
           const c = v.eyePos();
           const t = segVsSphere(ax, ay, az, bx, by, bz, c.x, c.y - 0.25, c.z, 1.1);
           if (t >= 0 && t < bestT) {
@@ -335,8 +338,10 @@ export class SpellSystem {
         // PERFECT BLOCK: shield raised at the last instant reflects the bolt at its
         // caster. Bots only get the reflect on a deliberate parry read — their
         // reflex blocks shouldn't accidentally fall inside the timing window.
+        const parryWin = SPELLS.protego.parry * (hitPlayer.char.id === 'dumbledore' ? 1.5 : 1) +
+          (hitPlayer.disc?.parryBonus ?? 0);
         const perfect = sp.kind === 'bolt' &&
-          game.time - hitPlayer.shieldOnAt <= SPELLS.protego.parry + (hitPlayer.disc?.parryBonus ?? 0) &&
+          game.time - hitPlayer.shieldOnAt <= parryWin &&
           pr.owner.team !== hitPlayer.team &&
           (!hitPlayer.bot || hitPlayer.bot.parryIntent);
         if (perfect) {
@@ -402,7 +407,7 @@ export class SpellSystem {
         game.effects.impact(hitPos, hitNormal, pr.spell, true);
         // bolts chew through breakable cover
         if (hitBox?.breakRec) {
-          game.env?.hitBreakable(hitBox.breakRec, pr.spell.dmg * pr.owner.stats.power * pr.owner.wand.power, pr.owner);
+          game.env?.hitBreakable(hitBox.breakRec, pr.spell.dmg * pr.owner.effPower() * pr.owner.wand.power, pr.owner);
         }
       } else if (hitPlayer) {
         this.boltHit(pr, hitPlayer, hitZone, hitPos);
@@ -416,7 +421,7 @@ export class SpellSystem {
     const sp = pr.spell;
     const owner = pr.owner;
     const isHS = zone === 'head';
-    let dmg = sp.dmg * owner.stats.power * owner.wand.power;
+    let dmg = sp.dmg * owner.effPower() * owner.wand.power;
     if (sp.falloff) {
       const [start, end, minMult] = sp.falloff;
       const t = clamp((pr.traveled - start) / (end - start), 0, 1);
@@ -446,11 +451,19 @@ export class SpellSystem {
     game.victimFeedback(victim, sp);
 
     if (sp.disarm) victim.applyDisarm(sp.disarm, game, dir);
-    if (sp.freeze) victim.applyFreeze(sp.freeze, game);
+    // McGonagall's body-binds hold longer
+    if (sp.freeze) victim.applyFreeze(sp.freeze * (owner.char.id === 'mcgonagall' ? 1.4 : 1), game);
     const dot = owner.disc?.dotMult ?? 1; // Hexer: afflictions tick harder and longer
     if (sp.snare) victim.applySnare(sp.snare * dot, game);
-    if (sp.silence) victim.applySilence(sp.silence * dot, game);
-    if (sp.bleed) victim.bleeds.push({ t: sp.bleed[1] * dot, dps: sp.bleed[0] * owner.stats.power * dot, attacker: owner, spell: sp });
+    // Umbridge's decrees stick: longer silences
+    if (sp.silence) victim.applySilence(sp.silence * dot * (owner.char.id === 'umbridge' ? 1.5 : 1), game);
+    if (sp.bleed) victim.bleeds.push({ t: sp.bleed[1] * dot, dps: sp.bleed[0] * owner.effPower() * dot, attacker: owner, spell: sp });
+    // Umbridge: hex hits file a surveillance report — victim pinned on squad radar
+    if (owner.char.id === 'umbridge' && sp.slot === 3 && owner.team !== victim.team) {
+      victim.taggedT = 4;
+      victim.taggedBy = owner.team;
+      if (victim.isHuman) game.hud.notice('TRACKED — Ministry surveillance!', 'bad');
+    }
     if (owner.char.id === 'bellatrix') {
       if (victim.slowT <= 0.25) game.effects.crucioFX(victim); // fresh application: writhing crackle
       victim.slowT = Math.max(victim.slowT, 1.5 * dot);
@@ -464,7 +477,9 @@ export class SpellSystem {
     const sp = pr.spell;
     if (sp.id === 'bombarda') {
       game.effects.explode(pos, sp);
-      game.explosion(pos, sp.radius, sp.dmg, pr.owner, sp);
+      // Ginny's Bat-Bogey Barrage: wider blast
+      const radius = sp.radius * (pr.owner.char.id === 'ginny' ? 1.25 : 1);
+      game.explosion(pos, radius, sp.dmg, pr.owner, sp);
       game.noise({ pos }, 40);
     } else if (sp.flash) {
       const fpos = normal ? pos.clone().addScaledVector(normal, 0.4) : pos.clone();
@@ -509,7 +524,7 @@ export class SpellSystem {
         const dx = p.pos.x - f.x, dz = p.pos.z - f.z;
         if (dx * dx + dz * dz < (f.r + 0.35) ** 2 && Math.abs(p.pos.y - f.y) < 2.4) {
           if (p === f.owner || p.team !== f.owner.team) {
-            let d = f.dps * dt * f.owner.stats.power * (f.owner.disc?.dotMult ?? 1);
+            let d = f.dps * dt * f.owner.effPower() * (f.owner.disc?.dotMult ?? 1);
             if (p.char.id === 'ron') d *= 0.75;
             if (p.disc?.blastResist) d *= p.disc.blastResist;
             if (p.burnT <= 0) game.effects.igniteFX(p); // catching fire

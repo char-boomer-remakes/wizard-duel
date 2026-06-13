@@ -1,7 +1,7 @@
 // In-match HUD: crosshair, bars, spell slots, killfeed, radar, scoreboard,
 // buy menu, death screen, announcer, damage numbers and indicators.
 import * as THREE from 'three';
-import { SPELLS, WANDS, EQUIPMENT, TEAM, TEAM_INFO, ROUND, wandById } from './data.js';
+import { SPELLS, WANDS, EQUIPMENT, TEAM, TEAM_INFO, ROUND, SLOT3, SLOT5, wandById } from './data.js';
 import { el, clamp, fmtTime, hexCss, lerp } from './utils.js';
 import { keyLabel } from './input.js';
 
@@ -194,15 +194,16 @@ export class HUD {
     this.scopeEl = el('div', 'scope-overlay', h);
     this.hitFlashA = 0;
 
-    // top bar
+    // top bar — one glass module: team pips | score · timer · score | team pips
     const top = el('div', 'hud-top', h);
     this.aliveL = el('div', 'alive-count left', top);
     const mid = el('div', 'top-mid', top);
     this.scoreL = el('div', 'score order', mid);
-    this.timerEl = el('div', 'round-timer', mid);
+    const timerBox = el('div', 'timer-box', mid);
+    this.timerEl = el('div', 'round-timer', timerBox);
+    this.roundLabel = el('div', 'round-label', timerBox);
     this.scoreR = el('div', 'score death', mid);
     this.aliveR = el('div', 'alive-count right', top);
-    this.roundLabel = el('div', 'round-label', h);
 
     // radar
     this.radarWrap = el('div', 'radar', h);
@@ -336,12 +337,13 @@ export class HUD {
     if (i === 1) return p.slot1();
     if (i === 2) return p.owned.has('avada') ? 'avada' : null;
     if (i === 3) {
-      if (p.curSpell === 'petrificus') return 'petrificus';
+      // show whichever hex is in hand, not just petrificus
+      if (SLOT3.includes(p.curSpell)) return p.curSpell;
       return 'expelliarmus';
     }
     if (i === 4) return p.owned.has('bombarda') ? 'bombarda' : null;
     if (i === 5) {
-      const opts = ['lumos', 'fumos', 'incendio', 'patronum'].filter((id) => p.owned.has(id));
+      const opts = SLOT5.filter((id) => p.owned.has(id));
       if (!opts.length) return null;
       if (opts.includes(p.curSpell)) return p.curSpell;
       return opts.find((id) => p.ownsUsable(id)) || opts[0];
@@ -528,12 +530,12 @@ export class HUD {
         });
       }
     } else if (this.buyTab === 'spells') {
-      for (const id of ['stupefy', 'sectum', 'avada', 'expelliarmus', 'petrificus', 'impedimenta', 'silencio', 'bombarda', 'lumos', 'fumos', 'incendio', 'patronum', 'protego']) {
+      for (const id of ['stupefy', 'sectum', 'avada', 'expelliarmus', 'petrificus', 'impedimenta', 'silencio', 'bombarda', 'lumos', 'fumos', 'incendio', 'patronum', 'serpensortia', 'protego']) {
         const sp = SPELLS[id];
         if (sp.exclusive && p.charId !== sp.exclusive) continue;
         if (id === 'stupefy' && p.charId === 'snape') continue;
         const price = Math.round(sp.price * p.priceMult());
-        const ownedFull = sp.charges ? (p.charges[id] || 0) >= sp.charges : p.owned.has(id);
+        const ownedFull = sp.charges ? (p.charges[id] || 0) >= p.chargeCap(sp) : p.owned.has(id);
         card({
           icon: sp.icon, name: sp.name, role: sp.role, price,
           desc: sp.desc,
@@ -786,7 +788,8 @@ export class HUD {
       const iconSrc = spellIcon(sp.icon);
       if (slotEl.img.dataset.k !== sp.icon) { slotEl.img.src = iconSrc; slotEl.img.dataset.k = sp.icon; }
       slotEl.name.textContent = sp.name.split(' ')[0];
-      const cost = Math.round(sp.mana * p.wand.manaMult);
+      // true cost: wand multiplier AND character discounts (Harry, Voldemort…)
+      const cost = Math.round(g.spells.manaCost(p, sp));
       slotEl.meta.textContent = sp.charges ? `×${p.charges[id] || 0} · ${cost}✦` : `${cost}✦`;
       slotEl.root.classList.toggle('active', p.curSpell === id);
       slotEl.root.classList.toggle('nomana', p.mana < cost);

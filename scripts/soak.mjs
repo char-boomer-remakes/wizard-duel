@@ -970,6 +970,118 @@ const sbxErrs = realErrors();
 check(sbxErrs.length === 0, `no console errors in scoreboard scenario (${sbxErrs.length})`);
 if (sbxErrs.length) log('   errors:', sbxErrs.slice(0, 5));
 
+// ----------------------- 16. roster picks + new character perks ---
+await load('map=dust2&team=order&char=dumbledore&squad=ginny,neville,mcgonagall&foes=greyback,umbridge,lucius,wormtail,bellatrix&diff=normal');
+await fastForward(8);
+const roster = await page.evaluate(async () => {
+  const { SPELLS } = await import('/src/data.js');
+  const g = window.__game;
+  const h = g.human;
+  const res = {};
+  const byChar = (id) => g.players.find((p) => p.charId === id);
+  for (const p of g.players) if (p.bot) {
+    p.bot.update = () => {};
+    Object.assign(p.ctrl, { moveX: 0, moveZ: 0, castHeld: false, altHeld: false, jump: false });
+  }
+  // A) hand-picked lineups honored, on the right sides
+  res.squadHonored = ['ginny', 'neville', 'mcgonagall'].every((id) => byChar(id)?.team === 'order');
+  res.foesHonored = ['greyback', 'umbridge', 'lucius', 'wormtail', 'bellatrix'].every((id) => byChar(id)?.team === 'death');
+  res.autoFilled = g.teamPlayers('order').length === 5 && g.teamPlayers('death').length === 5;
+  res.noDupes = new Set(g.players.map((p) => p.charId)).size === g.players.length;
+
+  // B) Dumbledore: cheaper shield drain + wider parry window vs a baseline
+  const gb = byChar('greyback'), um = byChar('umbridge'), lu = byChar('lucius'), wt = byChar('wormtail');
+  const base = byChar('bellatrix');
+  h.mana = 100; g.spells.updateShield(h, true, 1.0);
+  const dumbleDrain = 100 - h.mana;
+  g.spells.stopShield(h);
+  base.mana = 100; g.spells.updateShield(base, true, 1.0);
+  const baseDrain = 100 - base.mana;
+  g.spells.stopShield(base);
+  res.greaterGoodDrain = dumbleDrain < baseDrain * 0.7;
+
+  // C) Greyback: a kill feeds him HP and a speed surge
+  gb.health = 60;
+  const before = gb.speedMult();
+  const victim = byChar('ginny');
+  victim.health = 5; victim.equip.felix = 0; victim.equip.vest = 0;
+  g.damage(victim, gb, 50, SPELLS.stupefy, false, null, true);
+  res.hungerHeals = gb.health >= 90;
+  res.hungerHastes = gb.feralT > 0 && gb.speedMult() > before * 1.1;
+
+  // D) Umbridge: hex hit brands the victim on her team's radar
+  const tgt = byChar('neville');
+  g.spells.boltHit({ spell: SPELLS.silencio, owner: um, traveled: 5, vx: 40, vy: 0, vz: 0 }, tgt, false, tgt.eyePos());
+  res.surveillanceTags = tgt.taggedT > 3 && tgt.taggedBy === 'death';
+  res.silencioStronger = tgt.silenceT > SPELLS.silencio.silence * 1.2;
+  g.update(0.025);
+  res.surveillancePings = (g.time - (g.teamMemory.death.get(tgt.id)?.t ?? -99)) < 1;
+
+  // E) McGonagall: longer petrify + hex charge cap of 2
+  const mg = byChar('mcgonagall');
+  const tgt2 = byChar('lucius');
+  g.spells.boltHit({ spell: SPELLS.petrificus, owner: mg, traveled: 5, vx: 40, vy: 0, vz: 0 }, tgt2, false, tgt2.eyePos());
+  res.transfigHolds = tgt2.freezeT > SPELLS.petrificus.freeze * 1.2;
+  res.hexPockets = mg.chargeCap(SPELLS.petrificus) === 2 && h.chargeCap(SPELLS.petrificus) === 1;
+
+  // F) Neville: cornered courage — more damage out, less in
+  const nev = byChar('neville');
+  nev.health = nev.stats.hp; // healthy: baseline
+  const healthyPow = nev.effPower();
+  nev.health = nev.stats.hp * 0.3; // cornered
+  res.courageDamage = nev.effPower() > healthyPow * 1.2;
+  const hpBefore = nev.health;
+  g.damage(nev, base, 20, SPELLS.stupefy, false, null, true);
+  res.courageTanks = (hpBefore - nev.health) < 19;
+
+  // G) Wormtail: silent feet + free cloak each round; Ginny: free Impedimenta
+  res.ratCloaked = wt.equip.cloak >= 1;
+  const gin = byChar('ginny');
+  res.batBogey = (gin.charges.impedimenta || 0) >= 1;
+
+  // H) Lucius: kill pays +150 to him and +50 to living squadmates
+  const lm0 = lu.money, um0 = um.money;
+  const mark = byChar('mcgonagall');
+  mark.health = 5; mark.equip.felix = 0; mark.equip.vest = 0;
+  g.damage(mark, lu, 50, SPELLS.stupefy, false, null, true);
+  res.galleonsKill = lu.money - lm0 >= SPELLS.stupefy.killReward + 150;
+  res.galleonsTrickle = um.money - um0 === 50;
+
+  // I) recoil follows the crosshair: punched view = projectile direction
+  h.punchPitch = 0.1; h.punchYaw = 0.05;
+  const look = h.lookDir(), aim = h.aimDir();
+  res.aimFollowsPunch = aim.y > look.y + 0.05;
+  h.punchPitch = 0; h.punchYaw = 0;
+  res.aimMatchesRest = h.aimDir().distanceTo(h.lookDir()) < 1e-9;
+
+  // J) Protego eats enemy bolts but lets squadmate bolts fly through
+  const flyThrough = (shielder, owner) => {
+    const sp = g.world.spawns.order[0];
+    const gy = g.world.groundY(sp.x, sp.z, 5);
+    shielder.pos.set(sp.x, gy + 0.05, sp.z); shielder.vel.set(0, 0, 0);
+    shielder.shielding = true; shielder.mana = 100;
+    g.effects.ensureShield(shielder);
+    const eye = shielder.eyePos();
+    const fx = g.effects.acquireBolt(SPELLS.stupefy);
+    const pr = {
+      x: eye.x - 4, y: eye.y - 0.25, z: eye.z, vx: 60, vy: 0, vz: 0,
+      spell: SPELLS.stupefy, owner, life: 0.5, traveled: 0, gravity: 0, fx,
+    };
+    g.spells.projectiles.push(pr);
+    for (let i = 0; i < 12; i++) g.spells.update(0.016);
+    shielder.shielding = false;
+    return pr.traveled > 5 || pr.x > eye.x + 1; // made it past the shield bubble
+  };
+  // (lucius shields: he's still alive — ginny fell to Greyback's hunger above)
+  res.shieldPassesFriendly = flyThrough(lu, um) === true;   // death-side teammates
+  res.shieldBlocksEnemy = flyThrough(lu, nev) === false;    // order enemy
+  return res;
+});
+for (const [k, v] of Object.entries(roster)) check(v === true, `roster: ${k}`);
+const rosterErrs = realErrors();
+check(rosterErrs.length === 0, `no console errors in roster scenario (${rosterErrs.length})`);
+if (rosterErrs.length) log('   errors:', rosterErrs.slice(0, 5));
+
 await browser.close();
 log(failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECK(S) FAILED');
 process.exit(failures === 0 ? 0 : 1);

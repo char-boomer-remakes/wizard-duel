@@ -222,6 +222,9 @@ if (params.get('auto')) {
     difficulty: params.get('diff') || 'normal',
     discipline: params.get('disc') || null,
     format: 'mr8',
+    // hand-picked lineups (?squad=ginny,neville&foes=greyback,umbridge)
+    squad: (params.get('squad') || '').split(',').filter(Boolean),
+    foes: (params.get('foes') || '').split(',').filter(Boolean),
   };
   // custom brain axes via URL (?diff=custom&rf=80&am=20&se=60&iq=40)
   if (setup.difficulty === 'custom') {

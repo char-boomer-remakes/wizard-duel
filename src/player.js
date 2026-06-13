@@ -55,6 +55,9 @@ export class Player {
     this.snareT = 0; this.silenceT = 0;
     this.bleeds = [];
     this.burnT = 0; this.staggerT = 0; this.freezeT = 0;
+    this.feralT = 0;      // Greyback post-kill rush
+    this.taggedT = 0;     // Umbridge surveillance brand
+    this.taggedBy = null;
     this.lastHit = null;  // {x,y,z,power,t} → corpse impulse direction
     this.wandProp = null; // physical wand lying on the ground while disarmed
     this.fxAcc = 0; this.dripAcc = 0;
@@ -98,6 +101,30 @@ export class Player {
     if (!this.owned.has(id)) return false;
     if (sp.charges) return (this.charges[id] || 0) > 0;
     return true;
+  }
+
+  chargeCap(sp) {
+    let cap = sp.charges || 0;
+    // McGonagall keeps a spare of every hex in her sleeve
+    if (cap && this.charId === 'mcgonagall' && sp.slot === 3) cap += 1;
+    return cap;
+  }
+
+  // damage-side power — Neville hits 25% harder when cornered
+  effPower() {
+    let pw = this.stats.power;
+    if (this.charId === 'neville' && this.alive && this.health <= this.stats.hp * 0.35) pw *= 1.25;
+    return pw;
+  }
+
+  // round-start perk grants (called on every round spawn)
+  roundPerks() {
+    if (this.charId === 'ginny') {
+      this.owned.add('impedimenta');
+      this.charges.impedimenta = Math.max(this.charges.impedimenta || 0, 1);
+    } else if (this.charId === 'wormtail') {
+      this.equip.cloak = Math.max(this.equip.cloak, 1);
+    }
   }
 
   availableSpells() {
@@ -148,10 +175,22 @@ export class Player {
     const cp = Math.cos(this.pitch);
     return new THREE.Vector3(-Math.sin(this.yaw) * cp, Math.sin(this.pitch), -Math.cos(this.yaw) * cp);
   }
+
+  // where the CROSSHAIR points: true aim plus view punch. Bolts follow the
+  // camera so recoil is honest — what you see is where you shoot, and
+  // pulling down during a spray actually compensates (bots carry no punch).
+  aimDir() {
+    if (!this.punchPitch && !this.punchYaw) return this.lookDir();
+    const yaw = this.yaw + this.punchYaw;
+    const pitch = clamp(this.pitch + this.punchPitch, -1.55, 1.55);
+    const cp = Math.cos(pitch);
+    return new THREE.Vector3(-Math.sin(yaw) * cp, Math.sin(pitch), -Math.cos(yaw) * cp);
+  }
   get crouching() { return this.body.height < 1.5; }
 
   speedMult() {
     let m = this.disc?.speedMult ?? 1;
+    if (this.feralT > 0) m *= 1.15; // Greyback fresh off a kill
     if (this.crouching) m *= 0.48;
     else if (this.walking) m *= 0.5; // silent walk
     if (this.shielding) m *= SPELLS.protego.speedMult;
@@ -309,6 +348,7 @@ export class Player {
     this.burnT = Math.max(0, this.burnT - dt);
     this.staggerT = Math.max(0, this.staggerT - dt);
     this.freezeT = Math.max(0, this.freezeT - dt);
+    this.feralT = Math.max(0, this.feralT - dt);
     // wading puts the flames out
     if (this.burnT > 0 && this.body.inWater) {
       this.burnT = 0;
@@ -460,8 +500,11 @@ export class Player {
       if (this.footAcc > 2.6) {
         this.footAcc = 0;
         if (!this.crouching && !this.walking) {
-          g.audio.play('footstep', { pos: this.pos, vol: 0.45 });
-          g.noise(this, 9);
+          // Wormtail scurries on rat-soft feet: no audible step, no bot ping
+          if (this.charId !== 'wormtail') {
+            g.audio.play('footstep', { pos: this.pos, vol: 0.45 });
+            g.noise(this, 9);
+          }
         }
         if (this.burnT > 0) {
           // burning footprints
@@ -509,6 +552,7 @@ export class Player {
     this.snareT = 0; this.silenceT = 0;
     this.bleeds.length = 0;
     this.burnT = 0; this.staggerT = 0; this.freezeT = 0; this.lastHit = null;
+    this.feralT = 0; this.taggedT = 0; this.taggedBy = null;
     if (this.wandProp) this.game.effects.removeWandDrop(this.wandProp, false);
     this.healT = 0; this.broomT = 0; this.cloakT = 0;
     this.bloom = 0; this.punchPitch = 0; this.punchYaw = 0;
@@ -538,6 +582,8 @@ const STONE = new THREE.Color(0x9aa6b2);
 const ROBE_SHIFT = {
   harry: [0, 0, 0], hermione: [0.012, 0.04, 0.015], ron: [-0.015, 0.06, -0.012], luna: [0.035, 0, 0.012],
   snape: [0, -0.25, -0.02], bellatrix: [0.03, -0.08, -0.012], voldemort: [-0.04, -0.18, -0.015], draco: [0.05, -0.12, 0.015],
+  dumbledore: [0.06, 0.1, 0.04], mcgonagall: [-0.06, 0.08, -0.01], ginny: [0.02, 0.08, 0.01], neville: [-0.02, 0.03, -0.005],
+  lucius: [0, -0.3, 0.02], greyback: [-0.03, -0.15, -0.025], umbridge: [0.09, 0.05, 0.03], wormtail: [0.01, -0.2, -0.01],
 };
 function robeColorFor(charId, teamRobe) {
   const c = new THREE.Color(teamRobe);
@@ -549,6 +595,8 @@ function robeColorFor(charId, teamRobe) {
 const BODY_VAR = {
   harry: [1, 1], hermione: [0.94, 0.99], ron: [1.12, 1.02], luna: [0.95, 1],
   snape: [0.97, 1.03], bellatrix: [0.9, 1], voldemort: [0.95, 1.06], draco: [0.96, 1],
+  dumbledore: [1.0, 1.07], mcgonagall: [0.92, 1.04], ginny: [0.9, 0.98], neville: [1.14, 1.0],
+  lucius: [0.96, 1.05], greyback: [1.2, 1.04], umbridge: [1.1, 0.9], wormtail: [0.98, 0.92],
 };
 
 let GLOW_TEX = null;
@@ -693,6 +741,47 @@ export class Rig {
         cap.position.y = 1.64;
         cap.scale.set(1, 0.7, 1);
         body.add(cap);
+      } else if (skin.bun) { // severe bun pulled tight at the crown
+        const cap = new THREE.Mesh(new THREE.SphereGeometry(0.176, 10, 8, 0, Math.PI * 2, 0, Math.PI * 0.55), hairM);
+        cap.position.y = 1.64;
+        body.add(cap);
+        const bun = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), hairM);
+        bun.position.set(0, 1.76, 0.12);
+        body.add(bun);
+      } else if (skin.pony) { // quidditch ponytail, swinging high
+        const cap = new THREE.Mesh(new THREE.SphereGeometry(0.176, 10, 8, 0, Math.PI * 2, 0, Math.PI * 0.55), hairM);
+        cap.position.y = 1.65;
+        body.add(cap);
+        const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.018, 0.34, 6), hairM);
+        tail.position.set(0, 1.6, 0.2);
+        tail.rotation.x = 0.55;
+        body.add(tail);
+      } else if (skin.mane) { // shaggy werewolf mane swallowing the head
+        for (let i = 0; i < 6; i++) {
+          const tuft = new THREE.Mesh(new THREE.SphereGeometry(0.11, 7, 6), hairM);
+          const a = (i / 6) * Math.PI * 2;
+          tuft.position.set(Math.sin(a) * 0.13, 1.64 + ((i % 3) - 1) * 0.05, Math.cos(a) * 0.13 + 0.03);
+          body.add(tuft);
+        }
+        for (const side of [-1, 1]) { // sideburns down the jaw
+          const burn = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.16, 0.08), hairM);
+          burn.position.set(side * 0.15, 1.55, -0.04);
+          body.add(burn);
+        }
+      } else if (skin.curls) { // a helmet of tight, smug curls
+        const cap = new THREE.Mesh(new THREE.SphereGeometry(0.185, 10, 8, 0, Math.PI * 2, 0, Math.PI * 0.55), hairM);
+        cap.position.y = 1.63;
+        cap.scale.set(1.1, 0.95, 1.1);
+        body.add(cap);
+        for (const [cx, cy, cz] of [[-0.09, 1.71, -0.1], [0.09, 1.71, -0.1], [0, 1.74, -0.12]]) {
+          const curl = new THREE.Mesh(new THREE.SphereGeometry(0.045, 6, 5), hairM);
+          curl.position.set(cx, cy, cz);
+          body.add(curl);
+        }
+      } else if (skin.balding) { // a thin ring of hair clinging on
+        const ring = new THREE.Mesh(new THREE.CylinderGeometry(0.155, 0.165, 0.07, 10, 1, true), hairM);
+        ring.position.y = 1.62;
+        body.add(ring);
       } else {
         const hair = new THREE.Mesh(new THREE.SphereGeometry(0.175, 10, 8, 0, Math.PI * 2, 0, Math.PI * 0.55), hairM);
         hair.position.y = 1.65;
@@ -822,16 +911,153 @@ export class Rig {
       pin.position.set(-0.1, 1.42, -0.258);
       body.add(pin);
     }
-    // hat (Order) / hood (Death Eaters)
-    if (player.team === 'order') {
-      const hat = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.42, 8), mat(robeC));
-      hat.position.y = 1.92;
-      hat.rotation.z = 0.12;
+    if (skin.beard) { // the great silver beard, down past the belt
+      const beard = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.55, 7), mat(skin.hair ?? 0xdfd9cf));
+      beard.position.set(0, 1.28, -0.13);
+      beard.rotation.x = Math.PI; // point down
+      beard.rotation.z = 0.02;
+      body.add(beard);
+      const mo = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.03, 0.04), mat(skin.hair ?? 0xdfd9cf));
+      mo.position.set(0, 1.575, -0.15);
+      body.add(mo);
+    }
+    if (skin.halfMoon) { // half-moon spectacles on a crooked nose
+      for (const side of [-1, 1]) {
+        const lens = new THREE.Mesh(new THREE.TorusGeometry(0.04, 0.007, 5, 10, Math.PI), mat(0xd6b25a));
+        lens.position.set(side * 0.058, 1.635, -0.152);
+        lens.rotation.z = Math.PI; // half-moon hangs low
+        body.add(lens);
+      }
+    }
+    if (skin.startrim) { // moons and stars stitched into the robe
+      for (const [sx, sy, sz] of [[-0.12, 0.7, -0.31], [0.14, 0.52, -0.3], [0.04, 0.92, -0.28], [-0.16, 1.18, -0.24]]) {
+        const star = new THREE.Mesh(new THREE.SphereGeometry(0.016, 5, 4), mat(0xd6b25a));
+        star.position.set(sx, sy, sz);
+        body.add(star);
+      }
+    }
+    if (skin.squareGlasses) { // square spectacles, eyebrow permanently raised
+      for (const side of [-1, 1]) {
+        const frame = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.055, 0.012), mat(0x2a2622));
+        frame.position.set(side * 0.058, 1.64, -0.152);
+        body.add(frame);
+        const hole = new THREE.Mesh(new THREE.BoxGeometry(0.052, 0.034, 0.014), mat(SKIN));
+        hole.position.set(side * 0.058, 1.64, -0.153);
+        body.add(hole);
+      }
+    }
+    if (skin.tartan) { // tartan sash over one shoulder
+      const sash = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.62, 0.02), mat(0x1d5a3a));
+      sash.position.set(0.06, 1.3, -0.245);
+      sash.rotation.z = 0.55;
+      body.add(sash);
+      for (let i = 0; i < 3; i++) {
+        const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.092, 0.03, 0.022), mat(0xb03434));
+        stripe.position.set(0.2 - i * 0.14, 1.12 + i * 0.18, -0.246);
+        stripe.rotation.z = 0.55;
+        body.add(stripe);
+      }
+    }
+    if (skin.pads) { // quidditch keeper pads strapped over the shoulders
+      for (const side of [-1, 1]) {
+        const pad = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.12, 0.2), mat(0x6b4a2a));
+        pad.position.set(side * 0.3, 1.57, 0);
+        pad.rotation.z = side * -0.18;
+        body.add(pad);
+      }
+      const strap = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.04, 0.015), mat(0x3d2a16));
+      strap.position.set(0, 1.47, -0.24);
+      body.add(strap);
+    }
+    if (skin.sprig) { // a potted Mimbulus mimbletonia poking from the robe
+      const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.024, 0.05, 6), mat(0x8a5a33));
+      pot.position.set(0.14, 1.06, -0.28);
+      body.add(pot);
+      for (const [ox, oy] of [[0, 0.05], [-0.025, 0.035], [0.025, 0.04]]) {
+        const bud = new THREE.Mesh(new THREE.SphereGeometry(0.018, 5, 4), mat(0x4a7a3a));
+        bud.position.set(0.14 + ox, 1.09 + oy, -0.28);
+        body.add(bud);
+      }
+    }
+    if (skin.cane) { // the serpent-headed walking cane (wand sheath inside)
+      const cane = new THREE.Group();
+      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.018, 0.85, 6), mat(0x14110c));
+      shaft.position.y = -0.42;
+      cane.add(shaft);
+      const headK = new THREE.Mesh(new THREE.SphereGeometry(0.035, 7, 6), mat(0xcfd6da));
+      headK.position.y = -0.02;
+      headK.scale.set(1, 1.3, 1);
+      cane.add(headK);
+      cane.position.set(-0.08, 0.9, -0.1);
+      this.caneProp = cane;
+      body.add(cane);
+    }
+    if (skin.furTrim) { // fur-collared traveling cloak
+      const fur = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.2, 0.13, 9), mat(0xb9b4a8));
+      fur.position.y = 1.5;
+      body.add(fur);
+    }
+    if (skin.fur) { // matted pelt across the shoulders
+      for (const side of [-1, 1]) {
+        const pelt = new THREE.Mesh(new THREE.SphereGeometry(0.12, 7, 6), mat(0x5a4a36));
+        pelt.position.set(side * 0.26, 1.55, 0.02);
+        pelt.scale.set(1.2, 0.7, 1.2);
+        body.add(pelt);
+      }
+    }
+    if (skin.scarred) { // claw scars raked across the face
+      for (let i = 0; i < 3; i++) {
+        const scar = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.09, 0.01), mat(0xa05038));
+        scar.position.set(-0.07 + i * 0.045, 1.63, -0.155);
+        scar.rotation.z = 0.45;
+        body.add(scar);
+      }
+    }
+    if (skin.bow) { // the little black velvet bow
+      const knot = new THREE.Mesh(new THREE.SphereGeometry(0.022, 6, 5), mat(0x1c1418));
+      knot.position.set(0, 1.79, 0.02);
+      body.add(knot);
+      for (const side of [-1, 1]) {
+        const loop = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.035, 0.02), mat(0x1c1418));
+        loop.position.set(side * 0.045, 1.79, 0.02);
+        loop.rotation.z = side * 0.35;
+        body.add(loop);
+      }
+    }
+    if (skin.brooch) { // jeweled brooch at the cardigan collar
+      const br = new THREE.Mesh(new THREE.SphereGeometry(0.026, 6, 5), mat(0xe8c8e0));
+      br.position.set(0, 1.45, -0.25);
+      br.scale.set(1, 1, 0.5);
+      body.add(br);
+    }
+    if (skin.silverHand) { // Voldemort's gift — a hand of silver
+      const hand = new THREE.Mesh(new THREE.SphereGeometry(0.055, 7, 6), mat(0xc8ccd6));
+      hand.position.set(0, -0.46, 0);
+      hand.userData.silver = true;
+      // attach after arms are built (see below)
+      this.silverHandMesh = hand;
+    }
+    if (skin.hunched) body.rotation.x = 0.09; // the rat's cower
+    // hat (Order) / hood (Death Eaters) — some silhouettes replace them
+    if (skin.witchHat) { // McGonagall's tall emerald hat, slightly bent
+      const hat = new THREE.Mesh(new THREE.ConeGeometry(0.19, 0.52, 8), mat(0x123c28));
+      hat.position.set(0.02, 1.97, 0);
+      hat.rotation.z = 0.2;
       body.add(hat);
-      const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.27, 0.29, 0.04, 10), mat(team.trim));
-      brim.position.y = 1.75;
+      const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.28, 0.04, 10), mat(0x123c28));
+      brim.position.y = 1.76;
       body.add(brim);
-    } else if (!skin.pale) { // Voldemort's bare skull needs no hood
+    } else if (player.team === 'order') {
+      if (!skin.pony && !skin.mane) { // bare heads for the athletes and beasts
+        const hat = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.42, 8), mat(robeC));
+        hat.position.y = 1.92;
+        hat.rotation.z = 0.12;
+        body.add(hat);
+        const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.27, 0.29, 0.04, 10), mat(team.trim));
+        brim.position.y = 1.75;
+        body.add(brim);
+      }
+    } else if (!skin.pale && !skin.mane && !skin.curls && !skin.bow) { // no hood over Voldemort's skull, the mane, or the bow
       const hood = new THREE.Mesh(new THREE.ConeGeometry(0.21, 0.34, 8), mat(robeC));
       hood.position.y = 1.82;
       body.add(hood);
@@ -854,6 +1080,15 @@ export class Rig {
       ring.position.set(0, -0.4, 0);
       ring.rotation.x = Math.PI / 2;
       this.armR.add(ring);
+    }
+    if (this.silverHandMesh) this.armR.add(this.silverHandMesh); // Wormtail's silver hand
+    if (skin.claws) { // yellowed claws hooking past the sleeve
+      for (let i = 0; i < 3; i++) {
+        const claw = new THREE.Mesh(new THREE.ConeGeometry(0.012, 0.06, 5), mat(0xc8b890));
+        claw.position.set(-0.03 + i * 0.03, -0.46, -0.04);
+        claw.rotation.x = -Math.PI / 2.6;
+        this.armR.add(claw);
+      }
     }
     // charge glow at the wand tip: the whole lobby can see an Avada winding up
     this.chargeGlow = new THREE.Sprite(new THREE.SpriteMaterial({

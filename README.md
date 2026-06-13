@@ -2,9 +2,10 @@
 
 A fully offline, first-person wizard dueling game with Counter-Strike 1.6 rules:
 round-based 5v5 (Order of the Phoenix vs Death Eaters), a plant/dispel objective
-(the Cursed Relic), an economy with buy phases, personality-driven bots on both
-teams, and fifteen maps: six blockout remakes of classic CS layouts plus nine
-original wizarding-world battlegrounds.
+(the Cursed Relic), an economy with buy phases, a sixteen-champion roster with
+hand-pickable lineups on both sides, personality-driven bots, and fifteen maps:
+six blockout remakes of classic CS layouts plus nine original wizarding-world
+battlegrounds.
 
 Built with Three.js + Vite. All textures, sounds, and announcer stingers are
 synthesized at runtime — no CDN or external assets.
@@ -121,10 +122,12 @@ save it for exactly those moments.
 
 Spread works like CS 1.6: every cast **blooms** your spread and kicks your aim
 up a touch, and the crosshair opens up to show it — tap or burst instead of
-spraying. Movement state stacks on top: running is loose, walking or crouching
-is tight, jumping is a prayer, and casting from a broom is wild. **Charging
-Avada Kedavra scopes your view in** (slower turn speed while zoomed) — it
-plays like a wizard AWP.
+spraying. Bolts follow the **punched view** — recoil is honest, the spell goes
+where the crosshair points, and pulling down mid-spray genuinely compensates.
+Movement state stacks on top: running is loose, walking or crouching is tight,
+jumping is a prayer, and casting from a broom is wild. **Charging Avada
+Kedavra scopes your view in** (slower turn speed while zoomed) — it plays like
+a wizard AWP.
 
 Damage is locational, CS 1.6 style. Every wizard has five hit zones:
 
@@ -180,10 +183,18 @@ and how they fight (shown on the champion card in setup):
 - **Hermione** — support: stocks a full grenade belt, follows the pack.
 - **Ron** — anchor: plants his feet on the site and soaks damage.
 - **Luna** — wildcard: odd routes, shows up where no one is looking.
+- **Dumbledore** — the wall: unhurried, holds the door behind endless Protego.
+- **McGonagall** — discipline: binds the entry man and slows the second.
+- **Ginny** — second entry: a blast, a hex, and the site is hers.
+- **Neville** — the last man standing: hardest to kill when it matters most.
 - **Snape** — lurker: takes the long flank, buys cloaks, punishes rotations.
 - **Bellatrix** — berserker: sprints at you, fights at knife range, no retreat.
 - **Voldemort** — the AWPer: holds long angles with a charged Avada.
 - **Draco** — baiter: fights beside teammates, bails when a duel sours.
+- **Lucius** — old money: fights from the second rank, banks every kill.
+- **Greyback** — predator: point-blank, eats the wounded, gets faster doing it.
+- **Umbridge** — surveillance: files a report on everywhere you hide.
+- **Wormtail** — the rat: never first, never seen, always behind you.
 
 Personalities decide route choice (lurkers take the long way around), push
 timing (cautious bots stagger behind the entry), preferred fight range,
@@ -194,11 +205,45 @@ contests.
 Each champion also has a **signature spell** they favor buying (Harry → Lumos
 Maxima, Hermione → Impedimenta, Ron → Expecto Patronum, Luna → Fumos, Snape →
 Silencio, Bellatrix → Incendio, Voldemort → Serpensortia, Draco → Petrificus
-Totalus) and distinct visual signatures on their model (Harry's scar and house
-scarf, Hermione's satchel and time-turner, Ron's mended robes, Luna's
-Spectrespecs and dirigible-plum earrings, Snape's high collar and buttons,
-Bellatrix's corset lacing and stolen locket, Voldemort's serpentine nose slits
-and serpent clasp, Draco's prefect badge and signet ring).
+Totalus…) and distinct visual signatures on their model (Harry's scar and house
+scarf, Hermione's satchel and time-turner, Luna's Spectrespecs, Dumbledore's
+great silver beard and half-moon spectacles, McGonagall's emerald witch hat and
+tartan sash, Ginny's ponytail and keeper pads, Neville's Mimbulus sprig,
+Snape's high collar, Bellatrix's corset lacing, Voldemort's serpentine nose
+slits, Draco's prefect badge, Lucius's serpent cane and fur collar, Greyback's
+mane, scars and claws, Umbridge's curls, bow and pink brooch, Wormtail's
+balding cower and silver hand).
+
+### Champion perks
+
+Every champion carries a unique perk, implemented in the combat sim:
+
+| Champion | Perk |
+| --- | --- |
+| Harry | Expelliarmus costs 50% less mana, recovers 60% faster |
+| Hermione | Recharge (R) refills twice as fast |
+| Ron | 25% less blast/fire damage |
+| Luna | 60% flash resistance, radar pings linger +2s |
+| Dumbledore | Protego drains 40% less, 50% wider parry window |
+| McGonagall | Petrificus holds 40% longer, slot-3 hexes carry +1 charge |
+| Ginny | Bombarda blasts 25% wider, free Impedimenta each round |
+| Neville | Below 35% HP: +25% damage out, −15% damage in |
+| Snape | Sectumsempra replaces Stupefy — a bleeding bolt |
+| Bellatrix | Bolt hits Crucio-slow victims 25% for 1.5s |
+| Voldemort | Avada charges 35% faster, costs 20% less |
+| Draco | 20% discount on every purchase |
+| Lucius | Kills pay +150 G, living squadmates collect +50 G |
+| Greyback | Kills feed: +35 HP and +15% speed for 4s |
+| Umbridge | Hex hits brand victims on the squad radar 4s, Silencio +50% |
+| Wormtail | Silent footsteps, free Invisibility Cloak each round |
+
+### Pick your lineups
+
+In match setup, below the champion grid, two **LINEUP** boxes let you hand-pick
+which characters fight beside you and which you face — any mix from either
+side. Unpicked slots auto-fill with wizards of that team's own allegiance
+first. No character appears twice in a match; bots keep their personalities
+and perks whichever side they fight for.
 
 Bots are also **aware** of the world, not just what's in their crosshair:
 
@@ -301,10 +346,20 @@ halo rings on disarm/bind bolts) with dynamic lights on the first few bolts in
 flight, charge-up glows visible on enemy wands, muzzle flashes, and full
 victim feedback effects.
 
+### HUD
+
+The in-match interface is a frosted-glass design system: one top module with
+team alive-pips, scores, the round timer and phase label; a glass radar tile;
+pill-shaped killfeed rows; a vitals panel with slim glowing health/mana bars
+and big numerals; rounded spell slots that lift and glow gold when active
+(showing true mana costs after your champion's discounts); and matching glass
+styling across the buy menu, scoreboard, notices, and setup screens.
+
 ### Useful URL params (dev)
 
 `?auto=1&map=dust2&mode=relic&team=order&char=hermione&diff=legend&disc=warden`
-skips the menus and starts a match directly.
+skips the menus and starts a match directly. Add
+`&squad=ginny,neville&foes=greyback,umbridge` to hand-pick the lineups.
 
 ### Dev test scripts
 
@@ -312,7 +367,7 @@ With the dev server running (`npm start`):
 
 ```bash
 npx playwright install chromium-headless-shell   # once
-npm run soak        # headless smoke+soak suite: all 15 maps, match, defuse, DM, on-hit FX, defensive kit, clashes/disciplines/AI, hit zones, recoil/zoom/items/drops/summons, pause+spectate, env set pieces, hexes, scoreboard stats + champion identity
+npm run soak        # headless smoke+soak suite: all 15 maps, match, defuse, DM, on-hit FX, defensive kit, clashes/disciplines/AI, hit zones, recoil/zoom/items/drops/summons, pause+spectate, env set pieces, hexes, scoreboard stats, roster lineups + champion perks
 npm run nav-audit   # navmesh connectivity report per map (node scripts/debug-nav.mjs [base] [mapsCsv])
 # node scripts/check-spawns.mjs [base]  — spawn/timing audit (defenders must beat attackers to sites)
 # node scripts/map-shots.mjs [base] [mapsCsv]  — screenshots of map vantages
@@ -321,6 +376,8 @@ node scripts/fx-shots.mjs    # staged screenshots of on-hit effects → shots/
 node scripts/def-shots.mjs   # staged screenshots of the defensive kit → shots/
 node scripts/v2-shots.mjs    # champion lineup, bolt visuals, clash, setup menu → shots/
 node scripts/v3-shots.mjs    # staged screenshots: Avada scope, snake, loot drops, broom flight
+node scripts/shot.mjs        # screenshots of the glass HUD, buy menu, scoreboard, setup screen
+node scripts/rigshot.mjs     # lineup portrait of the new character models
 node scripts/debug-brain.mjs # dump attacker-bot decision state mid-round
 ```
 

@@ -1,7 +1,7 @@
 // Match orchestration: round state machine, economy, Cursed Relic objective,
 // halftime swaps, MVP, deathmatch, spectating, camera, perf governor.
 import * as THREE from 'three';
-import { SPELLS, CHARACTERS, BOT_NAMES, TEAM, TEAM_INFO, otherTeam, ECON, ROUND, DIFFICULTIES, FORMATS, GRENADES, wandById, equipById, aiProfile } from './data.js';
+import { SPELLS, CHARACTERS, BOT_NAMES, TEAM, TEAM_INFO, otherTeam, ECON, ROUND, DIFFICULTIES, FORMATS, GRENADES, wandById, equipById, charById, aiProfile } from './data.js';
 import { MAP_BUILDERS } from './maps/index.js';
 import { bakeRadar } from './mapbuilder.js';
 import { World } from './world.js';
@@ -103,14 +103,22 @@ export class Game {
     this.human.fp = new FPRig(this.camera, this.human.char, this.human.team);
     this.players.push(this.human);
 
-    const mkBots = (team, count) => {
-      const side = CHARACTERS.filter((c) => c.side === team && !usedChars.has(c.id));
+    // hand-picked lineups fill first; leftover slots auto-fill with that
+    // team's own side, then anyone unused, then named stand-in bots
+    const mkBots = (team, count, picks = []) => {
+      const queue = picks.filter((id) => charById(id) && !usedChars.has(id));
+      for (const id of queue) usedChars.add(id);
       const extras = BOT_NAMES[team].filter(([n]) => !usedNames.has(n));
       for (let i = 0; i < count; i++) {
         let name, charId;
-        if (side.length) {
-          const c = side.shift();
-          name = c.name.split(' ').pop(); // surname (and "Voldemort")
+        const pool = CHARACTERS.filter((c) => c.side === team && !usedChars.has(c.id));
+        const anyPool = CHARACTERS.filter((c) => !usedChars.has(c.id));
+        if (queue.length) {
+          charId = queue.shift();
+          name = charById(charId).short;
+        } else if (pool.length || anyPool.length) {
+          const c = (pool.length ? pool : anyPool).shift();
+          name = c.short;
           charId = c.id;
           usedChars.add(c.id);
         } else {
@@ -126,8 +134,8 @@ export class Game {
         this.players.push(p);
       }
     };
-    mkBots(s.team, clamp(s.botsFriendly, 0, 4));
-    mkBots(otherTeam(s.team), clamp(s.botsEnemy, 0, 5));
+    mkBots(s.team, clamp(s.botsFriendly, 0, 4), s.squad);
+    mkBots(otherTeam(s.team), clamp(s.botsEnemy, 0, 5), s.foes);
   }
 
   teamPlayers(team) { return this.players.filter((p) => p.team === team); }
@@ -162,6 +170,7 @@ export class Game {
       const members = this.teamPlayers(team);
       members.forEach((p, i) => {
         if (p.lostLoadout) { p.resetLoadout(); p.lostLoadout = false; }
+        p.roundPerks(); // character round-start grants (Ginny, Wormtail…)
         const sp = pts[i % pts.length];
         p.spawnAt(sp.x + rand(-0.5, 0.5), sp.z + rand(-0.5, 0.5), sp.yaw, this.world);
         p.roundDmg = 0; p.roundKills = 0; p.objScore = 0;
@@ -241,6 +250,7 @@ export class Game {
 
   dmLoadout(p) {
     p.resetLoadout();
+    p.roundPerks();
     p.wand = wandById('holly');
     p.owned.add('bombarda'); p.charges.bombarda = 2;
     p.owned.add('lumos'); p.charges.lumos = 2;
@@ -287,12 +297,12 @@ export class Game {
     } else if (kind === 'spell') {
       const sp = SPELLS[id];
       if (!sp) return false;
-      if (sp.charges && (p.charges[id] || 0) >= sp.charges) return false;
+      if (sp.charges && (p.charges[id] || 0) >= p.chargeCap(sp)) return false;
       if (!sp.charges && p.owned.has(id)) return false;
       price = sp.price;
       apply = () => {
         p.owned.add(id);
-        if (sp.charges) p.charges[id] = sp.charges;
+        if (sp.charges) p.charges[id] = p.chargeCap(sp);
       };
     } else if (kind === 'equip') {
       const eq = equipById(id);
@@ -326,6 +336,8 @@ export class Game {
   damage(victim, attacker, amount, spell, isHS = false, hitPos = null, silent = false) {
     if (!victim.alive || this.over) return;
     if (attacker && attacker !== victim && attacker.team === victim.team) return;
+    // Neville digs in when cornered: 15% less damage below 35% health
+    if (victim.char.id === 'neville' && victim.health <= victim.stats.hp * 0.35) amount *= 0.85;
     // Dragonhide Vest: soaks 30% of each hit until its pool is spent
     if (victim.vestHP > 0 && victim.equip.vest > 0 && amount > 0) {
       const soaked = Math.min(victim.vestHP, amount * 0.3);
@@ -373,7 +385,9 @@ export class Game {
       }
       if (attacker.isHuman && hitPos) this.hud.damageNumber(hitPos, Math.round(dealt), isHS);
       if (victim.bot) victim.bot.thinkT = Math.min(victim.bot.thinkT, 0.03); // pain wakes bots
-      this.see(victim.team, attacker);
+      // silent ticks (bleed/burn DOTs) must not live-track the attacker
+      // through walls for the whole duration — only direct hits reveal
+      if (!silent) this.see(victim.team, attacker);
     }
     if (victim.isHuman) {
       this.hud.painFlash(clamp(amount / 60, 0.15, 0.8));
@@ -434,7 +448,24 @@ export class Game {
         if (helper && helper.team !== victim.team) helper.assists++;
       }
       const reward = spell?.killReward ?? 300;
-      if (this.mode !== 'dm') attacker.money = clamp(attacker.money + reward, 0, ECON.cap);
+      if (this.mode !== 'dm') {
+        attacker.money = clamp(attacker.money + reward, 0, ECON.cap);
+        // Lucius: every kill lines the family vault — and buys loyalty
+        if (attacker.char.id === 'lucius') {
+          attacker.money = clamp(attacker.money + 150, 0, ECON.cap);
+          for (const q of this.teamPlayers(attacker.team)) {
+            if (q !== attacker && q.alive) q.money = clamp(q.money + 50, 0, ECON.cap);
+          }
+          if (attacker.isHuman) this.hud.notice('+150 G — Galleons & Influence', 'good');
+        }
+      }
+      // Greyback feeds on the kill: health back and a burst of speed
+      if (attacker.char.id === 'greyback' && attacker.alive) {
+        attacker.health = Math.min(attacker.stats.hp, attacker.health + 35);
+        attacker.feralT = 4;
+        this.effects.healFX(attacker);
+        if (attacker.isHuman) this.hud.notice('THE HUNGER — +35 HP, speed surge', 'good');
+      }
       if (attacker.isHuman) this.audio.ui('kill');
 
       if (this.mode !== 'dm') {
@@ -542,7 +573,7 @@ export class Game {
       if (!feetClear && !headClear) continue;
       const prox = clamp(1 - d / radius, 0, 1); // 1 at ground zero
       let dmg = maxDmg * Math.pow(prox, 1.1);
-      if (attacker) dmg *= attacker.stats.power;
+      if (attacker) dmg *= attacker.effPower();
       if (p.char.id === 'ron') dmg *= 0.75;
       if (p.disc?.blastResist) dmg *= p.disc.blastResist;
 
@@ -797,7 +828,7 @@ export class Game {
     }
     if (d.kind === 'spell') {
       const sp = SPELLS[d.id];
-      if ((p.charges[d.id] || 0) >= sp.charges) return false;
+      if ((p.charges[d.id] || 0) >= p.chargeCap(sp)) return false;
       p.owned.add(d.id);
       p.charges[d.id] = (p.charges[d.id] || 0) + 1;
       this.audio.play('wand_pickup', { pos: p.pos, vol: 0.7 });
@@ -1129,6 +1160,14 @@ export class Game {
     this.particles.update(dt);
 
     // human sight feeds team memory (radar pings)
+    // Umbridge surveillance brands: tagged victims stay pinned on the radar
+    for (const p of this.players) {
+      if (p.taggedT > 0) {
+        p.taggedT -= dt;
+        if (p.alive && p.taggedBy != null) this.see(p.taggedBy, p);
+      }
+    }
+
     this.humanSeeT -= dt;
     if (this.humanSeeT <= 0 && this.human.alive) {
       this.humanSeeT = 0.25;

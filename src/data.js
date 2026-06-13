@@ -160,7 +160,7 @@ export const HITZONES = {
 // team (sticks with + trades for teammates), dodge (strafe intensity mult).
 export const CHARACTERS = [
   {
-    id: 'harry', name: 'Harry Potter', side: 'order',
+    id: 'harry', name: 'Harry Potter', side: 'order', short: 'Harry',
     hp: 100, speed: 5.5, power: 1.0, cast: 1.0, mana: 100, regen: 4,
     perk: 'The Disarming Hero', perkDesc: 'Expelliarmus costs 50% less mana and recovers 60% faster.',
     fav: 'lumos',
@@ -169,7 +169,7 @@ export const CHARACTERS = [
     style: 'Entry duelist — first through the door, fights close, trades for teammates.',
   },
   {
-    id: 'hermione', name: 'Hermione Granger', side: 'order',
+    id: 'hermione', name: 'Hermione Granger', side: 'order', short: 'Hermione',
     hp: 80, speed: 5.7, power: 0.95, cast: 1.18, mana: 110, regen: 5,
     perk: 'Time-Turner Focus', perkDesc: 'Recharge (R) refills mana twice as fast.',
     fav: 'impedimenta',
@@ -178,7 +178,7 @@ export const CHARACTERS = [
     style: 'Support caster — smokes and flashes before every push, follows the pack.',
   },
   {
-    id: 'ron', name: 'Ron Weasley', side: 'order',
+    id: 'ron', name: 'Ron Weasley', side: 'order', short: 'Ron',
     hp: 115, speed: 5.3, power: 0.95, cast: 0.95, mana: 90, regen: 3.5,
     perk: "Keeper's Grit", perkDesc: 'Takes 25% less damage from explosions and fire.',
     fav: 'patronum',
@@ -187,7 +187,7 @@ export const CHARACTERS = [
     style: 'Site anchor — plants his feet, soaks damage, never leaves the objective.',
   },
   {
-    id: 'luna', name: 'Luna Lovegood', side: 'order',
+    id: 'luna', name: 'Luna Lovegood', side: 'order', short: 'Luna',
     hp: 90, speed: 5.5, power: 0.9, cast: 1.05, mana: 120, regen: 6,
     perk: 'Spectrespecs', perkDesc: '60% flash resistance. Enemy radar pings linger 2s longer.',
     fav: 'fumos',
@@ -196,7 +196,7 @@ export const CHARACTERS = [
     style: 'Wildcard — wanders strange routes alone and appears exactly where you are not looking.',
   },
   {
-    id: 'snape', name: 'Severus Snape', side: 'death',
+    id: 'snape', name: 'Severus Snape', side: 'death', short: 'Snape',
     hp: 95, speed: 5.4, power: 1.05, cast: 1.0, mana: 100, regen: 4,
     perk: 'The Half-Blood Prince', perkDesc: 'Exclusive: Sectumsempra replaces Stupefy — a bleeding bolt.',
     fav: 'silencio',
@@ -205,7 +205,7 @@ export const CHARACTERS = [
     style: 'Lurker — patient, silent, takes the long flank and punishes rotations.',
   },
   {
-    id: 'bellatrix', name: 'Bellatrix Lestrange', side: 'death',
+    id: 'bellatrix', name: 'Bellatrix Lestrange', side: 'death', short: 'Bellatrix',
     hp: 75, speed: 5.7, power: 1.2, cast: 1.05, mana: 95, regen: 4,
     perk: 'Crucio', perkDesc: 'Your bolt hits slow victims by 25% for 1.2s.',
     fav: 'incendio',
@@ -214,7 +214,7 @@ export const CHARACTERS = [
     style: 'Berserker — sprints straight at you cackling, point-blank, no retreat. Ever.',
   },
   {
-    id: 'voldemort', name: 'Lord Voldemort', side: 'death',
+    id: 'voldemort', name: 'Lord Voldemort', side: 'death', short: 'Voldemort',
     hp: 95, speed: 4.7, power: 1.3, cast: 0.95, mana: 130, regen: 5,
     perk: 'Master of Death', perkDesc: 'Avada Kedavra charges 35% faster and costs 20% less.',
     fav: 'serpensortia',
@@ -223,7 +223,7 @@ export const CHARACTERS = [
     style: 'The AWPer — holds a long angle with Avada Kedavra charged. One mistake, one kill.',
   },
   {
-    id: 'draco', name: 'Draco Malfoy', side: 'death',
+    id: 'draco', name: 'Draco Malfoy', side: 'death', short: 'Draco',
     hp: 90, speed: 5.5, power: 1.0, cast: 1.0, mana: 100, regen: 4,
     perk: 'Malfoy Coffers', perkDesc: '20% discount on every purchase.',
     fav: 'petrificus',
@@ -231,19 +231,92 @@ export const CHARACTERS = [
     ai: { aggro: 0.45, range: 16, util: 1.0, lurk: 0.4, snipe: 0.35, team: 0.6, dodge: 0.75, disc: 'phantom' },
     style: 'Baiter — fights beside teammates, bails the moment a duel turns sour.',
   },
+  {
+    id: 'dumbledore', name: 'Albus Dumbledore', side: 'order', short: 'Dumbledore',
+    hp: 90, speed: 4.8, power: 1.15, cast: 1.05, mana: 140, regen: 6.5,
+    perk: 'For the Greater Good', perkDesc: 'Protego drains 40% less mana and your perfect-parry window is 50% wider.',
+    fav: 'patronum',
+    skin: { hair: 0xdfd9cf, beard: true, halfMoon: true, accent: 0x4a2a6e, startrim: true, wand: { len: 0.58, color: 0x3d2c1c } },
+    ai: { aggro: 0.35, range: 22, util: 1.3, lurk: 0.1, snipe: 0.4, team: 0.8, dodge: 0.5, disc: 'warden' },
+    style: 'The headmaster holds the door — an unhurried wall of Protego who answers every mistake with precision.',
+  },
+  {
+    id: 'mcgonagall', name: 'Minerva McGonagall', side: 'order', short: 'McGonagall',
+    hp: 85, speed: 5.4, power: 1.05, cast: 1.12, mana: 105, regen: 4.5,
+    perk: 'Transfiguration Mistress', perkDesc: 'Your Petrificus holds 40% longer and slot-3 hexes carry +1 charge.',
+    fav: 'petrificus',
+    skin: { hair: 0x3c3530, bun: true, squareGlasses: true, accent: 0x14532d, tartan: true, witchHat: true, wand: { len: 0.5, color: 0x52391f } },
+    ai: { aggro: 0.5, range: 16, util: 1.1, lurk: 0.1, snipe: 0.3, team: 0.85, dodge: 0.65, disc: 'hexer' },
+    style: 'Discipline incarnate — binds the entry man, slows the second, and tuts at both.',
+  },
+  {
+    id: 'ginny', name: 'Ginny Weasley', side: 'order', short: 'Ginny',
+    hp: 85, speed: 5.8, power: 1.1, cast: 1.05, mana: 95, regen: 4,
+    perk: 'Bat-Bogey Barrage', perkDesc: 'Bombarda blasts 25% wider and every round starts with a free Impedimenta charge.',
+    fav: 'bombarda',
+    skin: { hair: 0xc2401f, pony: true, accent: 0x6e2230, pads: true, wand: { len: 0.46, color: 0x7a4a2a } },
+    ai: { aggro: 0.9, range: 10, util: 0.9, lurk: 0.05, snipe: 0.15, team: 0.6, dodge: 1.0, disc: 'duelist' },
+    style: 'Second through the door — a blast, a hex, and whatever is left of the site is hers.',
+  },
+  {
+    id: 'neville', name: 'Neville Longbottom', side: 'order', short: 'Neville',
+    hp: 125, speed: 5.0, power: 1.0, cast: 0.9, mana: 85, regen: 3.5,
+    perk: "Gryffindor's Courage", perkDesc: 'Below 35% health you deal 25% more damage and take 15% less.',
+    fav: 'incendio',
+    skin: { hair: 0x6a4a2c, sidePart: true, accent: 0x8a1e1e, sprig: true, wand: { len: 0.47, color: 0x9a7146 } },
+    ai: { aggro: 0.45, range: 12, util: 0.8, lurk: 0.1, snipe: 0.05, team: 0.9, dodge: 0.4, disc: 'warden' },
+    style: 'The last man standing — hardest to kill exactly when the round matters most.',
+  },
+  {
+    id: 'lucius', name: 'Lucius Malfoy', side: 'death', short: 'Lucius',
+    hp: 85, speed: 5.3, power: 1.05, cast: 1.05, mana: 110, regen: 4.5,
+    perk: 'Galleons & Influence', perkDesc: 'Your kills pay +150 G, and every living squadmate collects +50 G.',
+    fav: 'serpensortia',
+    skin: { hair: 0xe8e3d0, long: true, accent: 0x101418, cane: true, furTrim: true, wand: { len: 0.54, color: 0x1c1812, grip: 0xcfd6da } },
+    ai: { aggro: 0.35, range: 18, util: 1.2, lurk: 0.3, snipe: 0.4, team: 0.7, dodge: 0.6, disc: 'phantom' },
+    style: 'Old money — fights from the second rank, banks every kill, never dirties his gloves.',
+  },
+  {
+    id: 'greyback', name: 'Fenrir Greyback', side: 'death', short: 'Greyback',
+    hp: 130, speed: 5.9, power: 1.1, cast: 0.8, mana: 70, regen: 3,
+    perk: 'The Hunger', perkDesc: 'Kills feed you: +35 HP and +15% move speed for 4s.',
+    fav: 'incendio',
+    skin: { hair: 0x8d8578, mane: true, scarred: true, accent: 0x3a2e24, fur: true, claws: true, wand: { len: 0.42, color: 0x4a3424 } },
+    ai: { aggro: 1.0, range: 5, util: 0.3, lurk: 0.25, snipe: 0.0, team: 0.3, dodge: 0.9, disc: 'duelist' },
+    style: 'A werewolf with a wand he barely needs — eats the wounded and gets faster doing it.',
+  },
+  {
+    id: 'umbridge', name: 'Dolores Umbridge', side: 'death', short: 'Umbridge',
+    hp: 95, speed: 5.1, power: 0.95, cast: 1.1, mana: 115, regen: 5,
+    perk: 'Ministry Surveillance', perkDesc: 'Hex hits brand victims on the squad radar for 4s, and Silencio lasts 50% longer.',
+    fav: 'silencio',
+    skin: { hair: 0x8a6b50, curls: true, accent: 0xd55a9e, bow: true, brooch: true, wand: { len: 0.4, color: 0x70513a } },
+    ai: { aggro: 0.25, range: 17, util: 1.4, lurk: 0.2, snipe: 0.2, team: 0.5, dodge: 0.5, disc: 'hexer' },
+    style: 'Hem hem. Files a report on everywhere you hide, then has the committee silence you.',
+  },
+  {
+    id: 'wormtail', name: 'Peter Pettigrew', side: 'death', short: 'Wormtail',
+    hp: 80, speed: 5.6, power: 0.9, cast: 1.0, mana: 90, regen: 4,
+    perk: 'Animagus Instincts', perkDesc: 'Your footsteps make no sound and every round starts with an Invisibility Cloak.',
+    fav: 'fumos',
+    skin: { hair: 0x9a8a72, balding: true, hunched: true, accent: 0x4e4438, silverHand: true, wand: { len: 0.4, color: 0x6b5a44 } },
+    ai: { aggro: 0.2, range: 14, util: 1.0, lurk: 0.95, snipe: 0.1, team: 0.15, dodge: 0.7, disc: 'phantom' },
+    style: 'The rat — never first, never seen, always behind you when the duel is already lost.',
+  },
 ];
 
 export const charById = (id) => CHARACTERS.find((c) => c.id === id);
 
-// Extra bot identities reuse main character stat templates.
+// Extra bot identities reuse main character stat templates (used only when a
+// lobby needs more bodies than the roster has unique characters).
 export const BOT_NAMES = {
   order: [
-    ['Tonks', 'hermione'], ['Kingsley', 'ron'], ['Neville', 'harry'], ['Ginny', 'bellatrix'],
-    ['Sirius', 'harry'], ['Lupin', 'luna'], ['Moody', 'ron'], ['Fleur', 'hermione'],
+    ['Tonks', 'ginny'], ['Kingsley', 'dumbledore'], ['Sirius', 'harry'], ['Lupin', 'neville'],
+    ['Moody', 'mcgonagall'], ['Fleur', 'hermione'], ['Seamus', 'ginny'], ['Cho', 'luna'],
   ],
   death: [
-    ['Lucius', 'draco'], ['Dolohov', 'snape'], ['Greyback', 'ron'], ['Yaxley', 'harry'],
-    ['Rookwood', 'luna'], ['Avery', 'bellatrix'], ['Mulciber', 'draco'], ['Travers', 'snape'],
+    ['Dolohov', 'snape'], ['Yaxley', 'lucius'], ['Rookwood', 'umbridge'], ['Avery', 'bellatrix'],
+    ['Mulciber', 'greyback'], ['Travers', 'snape'], ['Nott', 'draco'], ['Rosier', 'wormtail'],
   ],
 };
 

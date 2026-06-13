@@ -25,13 +25,20 @@ export class Menus {
       mode: 'relic', mapId: 'dust2', team: TEAM.ORDER, charId: 'harry', prefWand: 'holly',
       botsFriendly: 4, botsEnemy: 5, difficulty: 'normal', format: 'mr8', discipline: 'duelist',
       aiCustom: { reflex: 50, aim: 50, sense: 50, iq: 50 },
+      squad: [], foes: [],
       ...(ctx.settings.lastSetup || {}),
     };
     if (!this.setup.aiCustom) this.setup.aiCustom = { reflex: 50, aim: 50, sense: 50, iq: 50 };
+    // scrub stale roster picks (old saves, renamed characters, champion overlap)
+    const validChar = (id) => CHARACTERS.some((c) => c.id === id);
+    this.setup.squad = (this.setup.squad || []).filter((id) => validChar(id) && id !== this.setup.charId);
+    this.setup.foes = (this.setup.foes || []).filter((id) => validChar(id) && id !== this.setup.charId && !this.setup.squad.includes(id));
     this.activePanel = null;
   }
 
   click() { this.ctx.audio.ui('click'); }
+
+  rosterCap(key) { return key === 'squad' ? clamp(this.setup.botsFriendly, 0, 4) : clamp(this.setup.botsEnemy, 1, 5); }
 
   clear() {
     this.el.innerHTML = '';
@@ -165,12 +172,13 @@ export class Menus {
     }
 
     // --- characters ---
-    el('h3', 'sec-title', scroll, 'CHAMPION');
+    el('h3', 'sec-title', scroll, 'CHAMPION (you)');
     const charRow = el('div', 'card-row chars', scroll);
     const statDefs = [
-      ['HP', (c) => c.hp / 120], ['Speed', (c) => (c.speed - 4.2) / 1.6], ['Power', (c) => (c.power - 0.7) / 0.65],
-      ['Cast', (c) => (c.cast - 0.8) / 0.45], ['Mana', (c) => c.mana / 130], ['Regen', (c) => c.regen / 6],
+      ['HP', (c) => c.hp / 130], ['Speed', (c) => (c.speed - 4.2) / 1.8], ['Power', (c) => (c.power - 0.7) / 0.65],
+      ['Cast', (c) => (c.cast - 0.7) / 0.55], ['Mana', (c) => c.mana / 140], ['Regen', (c) => c.regen / 6.5],
     ];
+    let refreshRosters = () => {};
     for (const ch of CHARACTERS) {
       const c = el('div', `sel-card char${this.setup.charId === ch.id ? ' sel' : ''}`, charRow);
       c.dataset.id = ch.id;
@@ -190,9 +198,65 @@ export class Menus {
       c.onclick = () => {
         this.click();
         this.setup.charId = ch.id;
+        // your champion can't also be a bot
+        this.setup.squad = this.setup.squad.filter((id) => id !== ch.id);
+        this.setup.foes = this.setup.foes.filter((id) => id !== ch.id);
         charRow.querySelectorAll('.sel-card').forEach((x) => x.classList.toggle('sel', x.dataset.id === ch.id));
+        refreshRosters();
       };
     }
+
+    // --- roster picker: hand-pick teammate & enemy characters ---
+    el('h3', 'sec-title', scroll, 'LINEUPS (pick who fights beside you — and who you face)');
+    const rosterWrap = el('div', 'rosters', scroll);
+    const mkRoster = (key, otherKey, label, hint) => {
+      const box = el('div', `roster ${key}`, rosterWrap);
+      const head = el('div', 'roster-head', box);
+      el('span', 'roster-label', head, label);
+      const count = el('span', 'roster-count', head, '');
+      el('div', 'roster-hint', box, hint);
+      const grid = el('div', 'roster-grid', box);
+      const chips = [];
+      for (const ch of CHARACTERS) {
+        const chip = el('div', 'rchip', grid);
+        chip.dataset.id = ch.id;
+        el('span', `rchip-side ${ch.side}`, chip);
+        el('span', 'rchip-name', chip, ch.short);
+        chip.title = `${ch.name} — ${ch.perk}\n${ch.perkDesc}\n${ch.style}`;
+        chip.onclick = () => {
+          const sel = this.setup[key];
+          if (chip.classList.contains('taken')) return;
+          this.click();
+          const i = sel.indexOf(ch.id);
+          if (i >= 0) sel.splice(i, 1);
+          else {
+            if (sel.length >= this.rosterCap(key)) return;
+            sel.push(ch.id);
+          }
+          refreshRosters();
+        };
+        chips.push(chip);
+      }
+      return { chips, count, key, otherKey };
+    };
+    const squadBox = mkRoster('squad', 'foes', 'YOUR SQUAD', 'Unpicked slots auto-fill with wizards of your allegiance. Click to toggle.');
+    const foesBox = mkRoster('foes', 'squad', 'THE OPPOSITION', 'Unpicked slots auto-fill from the enemy side. Click to toggle.');
+    refreshRosters = () => {
+      for (const box of [squadBox, foesBox]) {
+        const sel = this.setup[box.key];
+        const other = this.setup[box.otherKey];
+        const cap = this.rosterCap(box.key);
+        // over-cap trim (slider moved down after picking)
+        if (sel.length > cap) sel.length = cap;
+        box.count.textContent = `${sel.length}/${cap} picked · ${cap - sel.length} auto`;
+        for (const chip of box.chips) {
+          const id = chip.dataset.id;
+          chip.classList.toggle('sel', sel.includes(id));
+          chip.classList.toggle('taken', id === this.setup.charId || other.includes(id));
+        }
+      }
+    };
+    refreshRosters();
 
     // --- discipline (your build for the match) ---
     el('h3', 'sec-title', scroll, 'DISCIPLINE (your school of magic — one passive build)');
@@ -237,7 +301,7 @@ export class Menus {
     }
 
     // --- bots & rules ---
-    el('h3', 'sec-title', scroll, 'OPPOSITION');
+    el('h3', 'sec-title', scroll, 'LOBBY SIZE');
     const opts = el('div', 'opts-grid', scroll);
     const slider = (label, key, min, max, fmt = (v) => String(v)) => {
       const row = el('div', 'opt-row', opts);
@@ -249,6 +313,7 @@ export class Menus {
       inp.oninput = () => {
         this.setup[key] = Number(inp.value);
         val.textContent = fmt(this.setup[key]);
+        refreshRosters(); // roster caps follow the bot counts
       };
     };
     slider('Teammate bots', 'botsFriendly', 0, 4);

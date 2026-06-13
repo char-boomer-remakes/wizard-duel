@@ -67,6 +67,7 @@ export class Bot {
     this.execUntil = 0;
     this.charging = false;
     this.crouchT = 0;
+    this.crouchUntil = 0;   // timed crouch — auto-stands when it expires
     this.wanderT = 0;
     this.peek = null;       // defender forward-peek excursion
     this.peekT = rand(6, 14);
@@ -280,6 +281,9 @@ export class Bot {
     ctrl.useHeld = false;
     ctrl.climbF = 0;
     ctrl.walkHeld = false;
+    // crouch is a timed commitment, not a latch — bots used to get stuck
+    // crawling forever after their first crouched engagement
+    ctrl.crouch = g.time < this.crouchUntil;
     if (g.time >= this.shieldUntil) ctrl.altHeld = false;
     if (g.frozen) { ctrl.castHeld = false; return; }
 
@@ -747,7 +751,7 @@ export class Bot {
       ctrl.castHeld = false;
     } else if (spell.charge) {
       this.charging = true;
-      ctrl.crouch = dist > 24 && Math.random() < 0.5;
+      if (dist > 24 && Math.random() < 0.5) this.crouchUntil = Math.max(this.crouchUntil, g.time + 0.4);
     } else {
       // burst discipline: bursts with re-aim pauses between
       this.burstT -= 0.13;
@@ -829,7 +833,9 @@ export class Bot {
     this.crouchT -= 0.13;
     if (this.crouchT <= 0) {
       this.crouchT = rand(0.8, 2);
-      ctrl.crouch = Math.random() < 0.2 * sk.strafe && dist > 14 && this.retreating <= 0;
+      if (Math.random() < 0.2 * sk.strafe && dist > 14 && this.retreating <= 0) {
+        this.crouchUntil = g.time + rand(0.7, 1.5);
+      }
     }
     this.path = null; // drop path while fighting
   }
