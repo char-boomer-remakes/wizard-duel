@@ -607,10 +607,10 @@ export class Player {
   }
 
   pushNetState(s) {
-    // called from Game when a peer `state` message arrives
+    // called from Game when a peer `state` message (or host snapshot) arrives.
+    // Transform + spell only — `alive`/`health` are host-authoritative and set
+    // explicitly (host sim on the host, snapshot apply on guests).
     this.netLatest = s;
-    if (s.al === false) { this.alive = false; }
-    else if (s.al === true && !this.alive) { this.alive = true; this.health = this.stats.hp; }
     if (s.sp) this.curSpell = s.sp;
     pushSample(this.netBuf, { x: s.x, y: s.y, z: s.z, yaw: s.yaw, pitch: s.pitch }, performance.now());
   }
