@@ -27,3 +27,14 @@ export function sampleBuffer(buf, renderT) {
     pitch: a.pitch + (b.pitch - a.pitch) * k,
   };
 }
+
+export function pushSample(buf, s, now) {
+  buf.push({ t: now, x: s.x, y: s.y, z: s.z, yaw: s.yaw, pitch: s.pitch });
+  return buf;
+}
+
+export function trimBuffer(buf, now, windowMs) {
+  const cutoff = now - windowMs;
+  while (buf.length > 1 && buf[0].t < cutoff) buf.shift();
+  return buf;
+}

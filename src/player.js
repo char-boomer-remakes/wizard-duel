@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { SPELLS, SLOT3, SLOT5, TEAM_INFO, EQUIP_EFFECTS, DASH, wandById, charById, disciplineById } from './data.js';
 import { moveBody, EYE_STAND, EYE_CROUCH, STAND_H } from './world.js';
 import { clamp, lerp, damp, uid, makeWand } from './utils.js';
+import { sampleBuffer, pushSample, trimBuffer } from './net/interp.js';
 
 export class Player {
   constructor(game, { name, charId, team, isHuman = false, prefWand = 'holly', discipline = null }) {
@@ -82,6 +83,10 @@ export class Player {
     this.parryBuffT = 0;  // flow surge after a perfect parry
 
     this.ctrl = { moveX: 0, moveZ: 0, jump: false, crouch: false, walkHeld: false, castHeld: false, altHeld: false, climbF: 0 };
+    this.remote = false;     // network-driven puppet (other humans)
+    this.netBuf = [];        // interpolation buffer of incoming states
+    this.netClock = 0;       // ms clock advanced by updateRemote
+    this.netLatest = null;   // last raw state (for alive/spell/team)
     this.rig = null;
     this.fp = null;
     this.footAcc = 0;
@@ -381,6 +386,7 @@ export class Player {
 
   // -------------------------------------------------------------- update ---
   update(dt) {
+    if (this.remote) { this.updateRemote(dt); return; }
     if (!this.alive) {
       this.rig?.update(dt, this); // corpse keeps animating (ragdoll, fade)
       return;
@@ -599,6 +605,28 @@ export class Player {
     // rigs
     this.rig?.update(dt, this);
     if (this.isHuman) this.fp?.update(dt, this);
+  }
+
+  pushNetState(s) {
+    // called from Game when a peer `state` message arrives
+    this.netLatest = s;
+    if (s.al === false) { this.alive = false; }
+    else if (s.al === true && !this.alive) { this.alive = true; this.health = this.stats.hp; }
+    if (s.sp) this.curSpell = s.sp;
+    pushSample(this.netBuf, { x: s.x, y: s.y, z: s.z, yaw: s.yaw, pitch: s.pitch }, this.netClock);
+  }
+
+  updateRemote(dt) {
+    this.netClock += dt * 1000;
+    trimBuffer(this.netBuf, this.netClock, 500);
+    const renderT = this.netClock - 100; // render 100ms in the past for smoothness
+    const s = sampleBuffer(this.netBuf, renderT);
+    if (s) {
+      this.pos.set(s.x, s.y, s.z);
+      this.yaw = s.yaw; this.pitch = s.pitch;
+      this.walking = !!this.netLatest?.w;
+    }
+    this.rig?.update(dt, this);
   }
 
   onCastAnim(spell) {
