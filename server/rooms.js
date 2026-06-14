@@ -16,6 +16,9 @@ export class RoomRegistry {
     this.byMember = new Map(); // id -> code
   }
 
+  // Invariant: each connection `id` is created fresh by the transport for a
+  // single room and only ever calls `host` OR `join` once, so re-registration
+  // of the same id is not handled here.
   host(id, name) {
     let code = this.codeGen();
     while (this.rooms.has(code)) code = this.codeGen();
@@ -36,20 +39,20 @@ export class RoomRegistry {
 
   recipients(id) {
     const code = this.byMember.get(id);
-    const room = code && this.rooms.get(code);
+    const room = this.rooms.get(code);
     if (!room) return [];
     return [...room.members.keys()].filter((mid) => mid !== id);
   }
 
   nameOf(id) {
     const code = this.byMember.get(id);
-    const room = code && this.rooms.get(code);
+    const room = this.rooms.get(code);
     return room?.members.get(id)?.name ?? null;
   }
 
   leave(id) {
     const code = this.byMember.get(id);
-    const room = code && this.rooms.get(code);
+    const room = this.rooms.get(code);
     this.byMember.delete(id);
     if (!room) return { ended: false, left: id, notify: [] };
     if (room.hostId === id) {

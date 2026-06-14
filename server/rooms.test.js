@@ -55,3 +55,26 @@ test('guest leaving keeps the room and notifies peers', () => {
   assert.equal(res.left, 'sock-g');
   assert.deepEqual(res.notify.sort(), ['sock-h']);
 });
+
+test('nameOf returns the member name for a known id, and null for unknown or after leave', () => {
+  const reg = new RoomRegistry(() => 'AB12');
+  reg.host('sock-h', 'Harry');
+  reg.join('sock-g', 'AB12', 'Ron');
+  assert.equal(reg.nameOf('sock-g'), 'Ron');
+  assert.equal(reg.nameOf('unknown-id'), null);
+  reg.leave('sock-g');
+  assert.equal(reg.nameOf('sock-g'), null);
+});
+
+test('recipients returns [] for an unknown id', () => {
+  const reg = new RoomRegistry(() => 'AB12');
+  assert.deepEqual(reg.recipients('unknown-id'), []);
+});
+
+test('leave for a never-registered id returns ended:false with empty notify', () => {
+  const reg = new RoomRegistry(() => 'AB12');
+  const res = reg.leave('never-registered');
+  assert.equal(res.ended, false);
+  assert.equal(res.left, 'never-registered');
+  assert.deepEqual(res.notify, []);
+});
