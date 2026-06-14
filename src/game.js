@@ -15,6 +15,7 @@ import { Feedback } from './feedback.js';
 import { Comms } from './comms.js';
 import { Squad } from './squad.js';
 import { clamp, rand, choice, shuffle, yawTo } from './utils.js';
+import { buildState, buildCast } from './net/protocol.js';
 
 export class Game {
   constructor(app, setup) {
@@ -27,6 +28,10 @@ export class Game {
     this.hud = app.hud;
     this.settings = app.settings;
     this.postfx = app.postfx || null;
+    this.net = app.net || null;
+    this.role = this.net ? (this.net.isHost ? 'host' : 'guest') : null;
+    this.netPeers = new Map(); // peerId -> remote Player
+    this.netSendT = 0;
 
     this.mode = setup.mode; // 'relic' | 'dm'
     this.dmBanned = new Set(setup.dmBanned || []);
@@ -103,6 +108,7 @@ export class Game {
 
     if (this.mode === 'dm') this.startDeathmatch();
     else this.startRound(true);
+    if (this.net) this.bindNet();
   }
 
   // -------------------------------------------------------------- players ---
@@ -150,6 +156,78 @@ export class Game {
     };
     mkBots(s.team, clamp(s.botsFriendly, 0, 4), s.squad);
     mkBots(otherTeam(s.team), clamp(s.botsEnemy, 0, 5), s.foes);
+  }
+
+  // ----------------------------------------------------------------- net ---
+  addRemotePlayer(peerId, info = {}) {
+    const p = new Player(this, {
+      name: info.name || 'Wizard',
+      charId: info.charId || 'harry',
+      team: info.team || TEAM.ORDER,
+      isHuman: false,
+    });
+    p.remote = true;
+    p.bot = null;
+    p.rig = new Rig(this.scene, p);
+    p.alive = true;
+    this.players.push(p);
+    this.netPeers.set(peerId, p);
+    return p;
+  }
+
+  removeRemotePlayer(peerId) {
+    const p = this.netPeers.get(peerId);
+    if (!p) return;
+    this.scene.remove(p.rig?.group);
+    const i = this.players.indexOf(p);
+    if (i >= 0) this.players.splice(i, 1);
+    this.netPeers.delete(peerId);
+  }
+
+  bindNet() {
+    // existing peers (from the lobby welcome) become remote players now
+    for (const [pid, info] of this.net.peers) this.addRemotePlayer(pid, info);
+    this.net.on('peerJoin', (m) => this.addRemotePlayer(m.id, { name: m.name }));
+    this.net.on('peerLeave', (m) => this.removeRemotePlayer(m.id));
+    this.net.on('message', (m) => this.onNetMessage(m));
+  }
+
+  onNetMessage(m) {
+    const p = this.netPeers.get(m.from);
+    if (m.t === 'state') {
+      if (!p) { this.addRemotePlayer(m.from, { name: 'Wizard', charId: m.ch, team: m.tm }); return; }
+      if (m.tm) p.team = m.tm;
+      p.pushNetState(m);
+    } else if (m.t === 'cast') {
+      this.replayRemoteCast(p, m);
+    }
+  }
+
+  replayRemoteCast(p, m) {
+    if (!p) return;
+    const spell = SPELLS[m.spell];
+    if (!spell) return;
+    p.curSpell = m.spell;
+    // aim the puppet using the cast direction so the bolt flies correctly;
+    // position comes from interpolation (origin error is ~100ms, cosmetic only).
+    if (m.dir) {
+      const d = m.dir;
+      p.pitch = Math.asin(Math.max(-1, Math.min(1, d.y)));
+      p.yaw = Math.atan2(-d.x, -d.z);
+    }
+    this.spells.fire(p, spell);
+  }
+
+  netTick(realDt) {
+    this.netSendT += realDt;
+    if (this.netSendT >= 0.05) { // ~20 Hz
+      this.netSendT = 0;
+      const h = this.human;
+      this.net.send(buildState({
+        pos: h.pos, yaw: h.yaw, pitch: h.pitch, walking: h.walking,
+        charId: h.charId, team: h.team, curSpell: h.curSpell, alive: h.alive,
+      }));
+    }
   }
 
   teamPlayers(team) { return this.players.filter((p) => p.team === team); }
@@ -1282,10 +1360,12 @@ export class Game {
 
     // state machine
     if (this.mode === 'dm') {
-      this.dmTimer -= dt;
-      if (this.dmTimer <= 0) {
-        this.finishMatch(this.deathmatchWinner(false));
-        return;
+      if (this.role !== 'guest') {
+        this.dmTimer -= dt;
+        if (this.dmTimer <= 0) {
+          this.finishMatch(this.deathmatchWinner(false));
+          return;
+        }
       }
     } else if (this.state === 'freeze') {
       this.stateT -= dt;
@@ -1322,7 +1402,7 @@ export class Game {
     }
 
     // bots
-    for (const p of this.players) if (p.bot && p.alive) p.bot.update(dt);
+    if (this.role !== 'guest') for (const p of this.players) if (p.bot && p.alive) p.bot.update(dt);
 
     // squad coordinator: reactive team calls (synchronized executes, rotations,
     // retakes) on a slow ~2Hz tick, phase-offset per team
@@ -1330,6 +1410,7 @@ export class Game {
 
     // players
     for (const p of this.players) p.update(dt);
+    if (this.net) this.netTick(realDt);
 
     // soft player-vs-player separation (keeps bots from stacking)
     for (let i = 0; i < this.players.length; i++) {
