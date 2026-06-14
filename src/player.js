@@ -85,7 +85,6 @@ export class Player {
     this.ctrl = { moveX: 0, moveZ: 0, jump: false, crouch: false, walkHeld: false, castHeld: false, altHeld: false, climbF: 0 };
     this.remote = false;     // network-driven puppet (other humans)
     this.netBuf = [];        // interpolation buffer of incoming states
-    this.netClock = 0;       // ms clock advanced by updateRemote
     this.netLatest = null;   // last raw state (for alive/spell/team)
     this.rig = null;
     this.fp = null;
@@ -613,14 +612,13 @@ export class Player {
     if (s.al === false) { this.alive = false; }
     else if (s.al === true && !this.alive) { this.alive = true; this.health = this.stats.hp; }
     if (s.sp) this.curSpell = s.sp;
-    pushSample(this.netBuf, { x: s.x, y: s.y, z: s.z, yaw: s.yaw, pitch: s.pitch }, this.netClock);
+    pushSample(this.netBuf, { x: s.x, y: s.y, z: s.z, yaw: s.yaw, pitch: s.pitch }, performance.now());
   }
 
   updateRemote(dt) {
-    this.netClock += dt * 1000;
-    trimBuffer(this.netBuf, this.netClock, 500);
-    const renderT = this.netClock - 100; // render 100ms in the past for smoothness
-    const s = sampleBuffer(this.netBuf, renderT);
+    const now = performance.now();
+    trimBuffer(this.netBuf, now, 500);
+    const s = sampleBuffer(this.netBuf, now - 100); // render 100ms in the past for smoothness
     if (s) {
       this.pos.set(s.x, s.y, s.z);
       this.yaw = s.yaw; this.pitch = s.pitch;
